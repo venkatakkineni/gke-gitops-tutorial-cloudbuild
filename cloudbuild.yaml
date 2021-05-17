@@ -40,3 +40,108 @@ steps:
   - 'push'
   - 'gcr.io/$PROJECT_ID/hello-cloudbuild:$SHORT_SHA'
 # [END cloudbuild]
+
+# [START cloudbuild-trigger-cd]
+# This step clones the hello-cloudbuild-env repository
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: Clone env repository
+#   entrypoint: /bin/sh
+#   args:
+#   - '-c'
+#   - |
+#     gcloud source repos clone hello-cloudbuild-env && \
+#     cd hello-cloudbuild-env && \
+#     git checkout candidate && \
+#     git config user.email $(gcloud auth list --filter=status:ACTIVE --format='value(account)')
+
+- name: 'gcr.io/cloud-builders/git'
+  secretEnv: ['SSH_KEY']
+  entrypoint: 'bash'
+  args:
+  - -c
+  - |
+    echo "$$SSH_KEY" >> /root/.ssh/id_rsa
+    chmod 400 /root/.ssh/id_rsa
+    cd hello-cloudbuild-env
+    cp known_hosts.github /root/.ssh/known_hosts
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+
+- name: gcr.io/cloud-builders/git
+  id: Clone env repository
+  entrypoint: /bin/sh
+  args:
+  - '-c'
+  - |
+    git  clone git@github.com:venkatakkineni/hello-cloudbuild-env.git && \
+    cd hello-cloudbuild-env && \
+    git checkout candidate && \
+    git config user.email $(gcloud auth list --filter=status:ACTIVE --format='value(account)')
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+  
+
+# This step generates the new manifest
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: Generate manifest
+#   entrypoint: /bin/sh
+#   args:
+#   - '-c'
+#   - |
+#      sed "s/GOOGLE_CLOUD_PROJECT/${PROJECT_ID}/g" kubernetes.yaml.tpl | \
+#      sed "s/COMMIT_SHA/${SHORT_SHA}/g" > hello-cloudbuild-env/kubernetes.yaml
+
+- name: gcr.io/cloud-builders/git
+  id: Generate manifest
+  entrypoint: /bin/sh
+  args:
+  - '-c'
+  - |
+    sed "s/GOOGLE_CLOUD_PROJECT/${PROJECT_ID}/g" kubernetes.yaml.tpl | \
+    sed "s/COMMIT_SHA/${SHORT_SHA}/g" > hello-cloudbuild-env/kubernetes.yaml
+
+# This step pushes the manifest back to hello-cloudbuild-env
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: Push manifest
+#   entrypoint: /bin/sh
+#   args:
+#   - '-c'
+#   - |
+#     set -x && \
+#     cd hello-cloudbuild-env && \
+#     git add kubernetes.yaml && \
+#     git commit -m "Deploying image gcr.io/${PROJECT_ID}/hello-cloudbuild:${SHORT_SHA}
+#     Built from commit ${COMMIT_SHA} of repository hello-cloudbuild-app
+#     Author: $(git log --format='%an <%ae>' -n 1 HEAD)" && \
+#     git push origin candidate
+
+
+
+
+
+
+- name: 'gcr.io/cloud-builders/git'
+  id: Push manifest
+  entrypoint: /bin/sh
+  args:
+  - '-c'
+  - |
+    set -x && \
+    cd hello-cloudbuild-env && \
+    git add kubernetes.yaml && \
+    git commit -m "Deploying image gcr.io/${PROJECT_ID}/hello-cloudbuild:${SHORT_SHA}
+    Built from commit ${COMMIT_SHA} of repository hello-cloudbuild-app
+    Author: $(git log --format='%an <%ae>' -n 1 HEAD)" && \
+    git push origin candidate
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+
+availableSecrets:
+  secretManager:
+  - versionName: projects/$PROJECT_ID/secrets/github-secret/versions/latest
+    env: 'SSH_KEY'
+
+# [END cloudbuild-trigger-cd]
